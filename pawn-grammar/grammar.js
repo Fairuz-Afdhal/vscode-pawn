@@ -29,6 +29,7 @@ module.exports = grammar({
     [$._type, $._expression],
     [$.parameter_declaration, $._type],
     [$.visibility, $.variable_declaration_statement],
+    [$.return_statement],
   ],
 
   word: ($) => $.identifier,
