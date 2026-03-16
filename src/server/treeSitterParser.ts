@@ -52,12 +52,23 @@ export class TreeSitterParser {
           const nameNode = node.childForFieldName("name");
           if (nameNode) {
             const visibility = node.child(0)?.type === "visibility" ? node.child(0)?.text : "function";
+            const firstLine = node.text.split("\n")[0].trim();
+            let name = firstLine;
+
+            // Strip the trailing brace if it's there
+            if (name.endsWith("{")) {
+              name = name.slice(0, -1).trim();
+            }
+
             currentSymbol = {
-              name: nameNode.text,
+              name: name,
               kind: visibility as PawnSymbol["kind"],
               node: node,
               fullRange: this.getNodeRange(node),
-              selectionRange: this.getNodeRange(nameNode),
+              selectionRange: {
+                start: this.getNodeRange(node).start,
+                end: { line: node.startPosition.row, character: 1000 },
+              },
               children: [],
             };
           }
@@ -66,12 +77,16 @@ export class TreeSitterParser {
         case "preproc_define": {
           const nameNode = node.childForFieldName("name");
           if (nameNode) {
+            const firstLine = node.text.split("\n")[0].trim();
             currentSymbol = {
-              name: nameNode.text,
+              name: firstLine,
               kind: "macrodefine",
               node: node,
               fullRange: this.getNodeRange(node),
-              selectionRange: this.getNodeRange(nameNode),
+              selectionRange: {
+                start: this.getNodeRange(node).start,
+                end: { line: node.startPosition.row, character: 1000 },
+              },
               children: [],
             };
           }
@@ -79,16 +94,25 @@ export class TreeSitterParser {
         }
         case "enum_declaration": {
           const nameNode = node.childForFieldName("name");
-          if (nameNode) {
-            currentSymbol = {
-              name: nameNode.text ?? "enum",
-              kind: "enum",
-              node: node,
-              fullRange: this.getNodeRange(node),
-              selectionRange: this.getNodeRange(nameNode),
-              children: [],
-            };
+          const firstLine = node.text.split("\n")[0].trim();
+          let name = firstLine;
+
+          // Strip the trailing brace if it's there
+          if (name.endsWith("{")) {
+            name = name.slice(0, -1).trim();
           }
+
+          currentSymbol = {
+            name: name,
+            kind: "enum",
+            node: node,
+            fullRange: this.getNodeRange(node),
+            selectionRange: {
+              start: this.getNodeRange(node).start,
+              end: { line: node.startPosition.row, character: 1000 },
+            },
+            children: [],
+          };
           break;
         }
         case "if_statement":
@@ -99,20 +123,30 @@ export class TreeSitterParser {
         case "do_while_statement":
         case "case_statement":
         case "default_statement": {
-          let text = node.text.split("\n")[0].trim();
+          const firstLine = node.text.split("\n")[0].trim();
+          let name = firstLine;
+
+          // Strip the trailing brace if it's there (e.g. if (cond) { )
+          if (name.endsWith("{")) {
+            name = name.slice(0, -1).trim();
+          }
 
           // Check if this is an 'else if'
           if (node.type === "if_statement" && node.parent?.type === "if_statement") {
-            // Find if there's an 'else' before this node in the parent's children
             const siblings = node.parent.children;
             const index = siblings.indexOf(node);
             if (index > 0 && siblings[index - 1].type === "else") {
-              text = "else " + text;
+              name = "else " + name;
             }
           }
 
+          // If the name is still just a brace or empty, fallback to node type
+          if (!name || name === "{" || name === "}") {
+            name = node.type.replace("_statement", "");
+          }
+
           currentSymbol = {
-            name: text,
+            name: name,
             kind: "statement",
             node: node,
             fullRange: this.getNodeRange(node),
