@@ -11,17 +11,25 @@ const beforeFix: RegexCodeFix[] = [
   { expr: /\f|\v|\t*(new|static|const)\s*\n\s*((.|\s)*?)\s*;/gm, replacement: "$1 $2;" },
   { expr: /case\s*(\S*)\s*:\s*(\w+\s*.*;)/gm, replacement: "case $1pawnd_switch_case_signle_line$2" },
   { expr: /extract\s*(.*)->\s*(.*?);/gm, replacement: "pawnd_sscanf_extract_$1___$2___" },
-  { expr: /([^\s:]):([^\s:])(?=(?:[^"]*"[^"]*")*[^"]*$)/gm, replacement: "$1pawnd_tag_semicolon$2" },
+  // Tag protection: trick astyle by making it look like a typed variable
+  { expr: /([A-Za-z0-9_]+)\s*:\s*(?=(?:[^"]*"[^"]*")*[^"]*$)/gm, replacement: "/*pawnd_tag_colon_$1*/ int " },
   { expr: /([^\s:])::([^\s:])(?=(?:[^"]*"[^"]*")*[^"]*$)/gm, replacement: "$1pawnd_tag_two_semicolon$2" },
   { expr: /([^\s:])@([^\s:])(?=(?:[^"]*"[^"]*")*[^"]*$)/gm, replacement: "$1pawnd_tag_at$2" },
   { expr: /\bconst\b/gm, replacement: "pawnd_tag_const" },
+  // Unique Void-Tricking for restoration
+  { expr: /\bstock\b/gm, replacement: "/*pawnd_kw_stock*/ void" },
+  { expr: /\bpublic\b/gm, replacement: "/*pawnd_kw_public*/ void" },
+  { expr: /\bforward\b/gm, replacement: "/*pawnd_kw_forward*/ void" },
+  { expr: /\bnative\b/gm, replacement: "/*pawnd_kw_native*/ void" },
+  { expr: /\bhook\b/gm, replacement: "/*pawnd_kw_hook*/ void" },
 ];
 
 const afterFix: RegexCodeFix[] = [
   { expr: /\bpawnd_tag_const\b/gm, replacement: "const" },
   { expr: /case(.*)pawnd_switch_case_signle_line/gm, replacement: "case$1: " },
   { expr: /pawnd_sscanf_extract_(.*?)___(.*?)___/gm, replacement: "extract $1-> $2;" },
-  { expr: /pawnd_tag_semicolon/gm, replacement: ":" },
+  // Restore tags
+  { expr: /\/\*pawnd_tag_colon_(.*?)\*\/\s*int\s*/gm, replacement: "$1: " },
   { expr: /pawnd_tag_two_semicolon/gm, replacement: "::" },
   { expr: /pawnd_tag_at/gm, replacement: "@" },
   { expr: />(\s+)\nhook/gm, replacement: ">\nhook" },
@@ -31,19 +39,21 @@ const afterFix: RegexCodeFix[] = [
   { expr: /CMD(.*):\r\n(.*)\(/gim, replacement: "CMD$1:$2(" },
   { expr: /CMD(.*):\n(.*)\(/gim, replacement: "CMD$1:$2(" },
   { expr: /(static|const|new) (.*?):\s+/gm, replacement: "$1 $2:" },
+  // Restore keywords
+  { expr: /\/\*pawnd_kw_stock\*\/\s*void/gm, replacement: "stock" },
+  { expr: /\/\*pawnd_kw_public\*\/\s*void/gm, replacement: "public" },
+  { expr: /\/\*pawnd_kw_forward\*\/\s*void/gm, replacement: "forward" },
+  { expr: /\/\*pawnd_kw_native\*\/\s*void/gm, replacement: "native" },
+  { expr: /\/\*pawnd_kw_hook\*\/\s*void/gm, replacement: "hook" },
 ];
 
 const formatPawn = async (content: string) => {
-  const brace_style = vscode.workspace.getConfiguration().get("pawn.language.brace_style") as
-    | "Allman"
-    | "K&R"
-    | "Stroustrup"
-    | "Google"
-    | null;
+  const config = vscode.workspace.getConfiguration();
+  const brace_style = config.get("pawn.language.brace_style") as "Allman" | "K&R" | "Stroustrup" | "Google" | null;
 
-  for (const key in beforeFix) {
-    const element = beforeFix[key];
-    content = content.replace(element.expr, element.replacement);
+  let formattedContent = content;
+  for (const element of beforeFix) {
+    formattedContent = formattedContent.replace(element.expr, element.replacement);
   }
 
   const style = () => {
@@ -66,14 +76,34 @@ const formatPawn = async (content: string) => {
     "--unpad-paren",
     "--pad-header",
     "--attach-return-type",
+    "--max-code-length=200", // Prevent aggressive wrapping
   ];
 
-  content = await format(content, formatterConfig.join(" "));
-  for (const key in afterFix) {
-    const element = afterFix[key];
-    content = content.replace(element.expr, element.replacement);
+  formattedContent = await format(formattedContent, formatterConfig.join(" "));
+  for (const element of afterFix) {
+    formattedContent = formattedContent.replace(element.expr, element.replacement);
   }
-  return content;
+  return formattedContent;
+};
+
+export const formatActiveDocument = async () => {
+  const editor = vscode.window.activeTextEditor;
+  if (!editor) return;
+
+  const document = editor.document;
+  if (document.languageId !== "pawn") return;
+
+  const content = document.getText();
+  const formattedContent = await formatPawn(content);
+
+  const fullRange = new vscode.Range(
+    document.positionAt(0),
+    document.positionAt(content.length)
+  );
+
+  editor.edit((editBuilder) => {
+    editBuilder.replace(fullRange, formattedContent);
+  });
 };
 
 const PawnDocumentFormattingEditProvider = {

@@ -151,6 +151,11 @@
           "type": "boolean",
           "default": "true",
           "description": "enable to view last line of region section when it's collaped, if you select false then only first line will be visible."
+        },
+        "pawn.language.format.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable formatting providers. If false, formatting will not trigger on save even if editor.formatOnSave is true. You can still use the manual format command."
         }
       }
     },
@@ -187,6 +192,10 @@
       {
         "command": "pawn-development.reloadDefs",
         "title": "Pawn Development: reload definitions"
+      },
+      {
+        "command": "pawn-development.format",
+        "title": "Pawn Development: Format Document"
       }
     ],
     "menus": {
