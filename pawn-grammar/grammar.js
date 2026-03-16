@@ -28,6 +28,7 @@ module.exports = grammar({
   conflicts: ($) => [
     [$._type, $._expression],
     [$.parameter_declaration, $._type],
+    [$.visibility, $.variable_declaration_statement],
   ],
 
   word: ($) => $.identifier,
@@ -147,6 +148,7 @@ module.exports = grammar({
 
     _statement: ($) => choice(
       $.block,
+      $.variable_declaration_statement,
       $.expression_statement,
       $.if_statement,
       $.while_statement,
