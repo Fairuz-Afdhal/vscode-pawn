@@ -9,9 +9,9 @@ const PREC = {
   BITWISE_AND: 6,
   EQUAL: 7,
   RELATIONAL: 8,
-  SHIFT: 10,
-  ADD: 11,
-  MULTIPLY: 12,
+  SHIFT: 9,
+  ADD: 10,
+  MULTIPLY: 11,
   UNARY: 14,
   POSTFIX: 15,
   CALL: 16,
@@ -31,6 +31,9 @@ module.exports = grammar({
     [$.return_statement],
     [$.string_literal],
     [$.variable_declaration_statement],
+    [$._expression, $._switch_case],
+    [$._statement, $.case_statement],
+    [$._statement, $.default_statement],
   ],
 
   word: ($) => $.identifier,
@@ -217,13 +220,13 @@ module.exports = grammar({
       "case",
       commaSep1($._expression),
       ":",
-      repeat($._statement),
+      choice($.block, $._statement),
     ),
 
     default_statement: ($) => seq(
       "default",
       ":",
-      repeat($._statement),
+      choice($.block, $._statement),
     ),
 
     do_while_statement: ($) => seq(
@@ -291,7 +294,7 @@ module.exports = grammar({
         [PREC.BITWISE_AND, "&"],
         [PREC.EQUAL, choice("==", "!=")],
         [PREC.RELATIONAL, choice("<", ">", "<=", ">=")],
-        [PREC.SHIFT, choice("<<", ">>")],
+        [PREC.SHIFT, choice("<<", ">>", ">>>")],
         [PREC.ADD, choice("+", "-")],
         [PREC.MULTIPLY, choice("*", "/", "%")],
       ];
@@ -326,22 +329,23 @@ module.exports = grammar({
       /\d+\.\d+/,
     ),
 
-    string_literal: ($) => choice(
+    string_literal: ($) => repeat1(choice(
       seq(
         optional("!"),
         '"',
-        repeat(choice(/[^"\\\n]+/, $.escape_sequence)),
+        repeat(choice(/[^"\\\n]+/, $.escape_sequence, $.line_continuation)),
         '"',
       ),
       // Plain strings (escapes ignored)
       seq(
         optional("!"),
-        "\\",
+        sc_ctrlchar($, '"'),
+        repeat(choice(/[^"\n]+/, $.line_continuation)),
         '"',
-        repeat(/[^"\n]+/),
-        '"',
-      ),
-    ),
+      )
+    )),
+
+    line_continuation: ($) => /\\\r?\n/,
 
     escape_sequence: ($) => /\\[abfnrtv\\'"]/,
 
@@ -358,4 +362,11 @@ function commaSep(rule) {
 
 function commaSep1(rule) {
   return seq(rule, repeat(seq(",", rule)));
+}
+
+function sc_ctrlchar($, rule) {
+  return seq(
+    alias(/[\\^]/, $.ctrl_char),
+    rule
+  );
 }
