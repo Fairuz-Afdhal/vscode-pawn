@@ -15,6 +15,7 @@ import { findFunctionIdentifier, positionToIndex, findIdentifierAtCursor, isPawn
 import { treeSitterParser, PawnSymbol } from "./treeSitterParser";
 import { TextDocument } from "vscode-languageserver-textdocument";
 import { connection } from "./server";
+import { DocumentSymbol, SymbolKind, FoldingRange } from "vscode-languageserver";
 import * as fs from "fs";
 import * as url from "url";
 import * as path from "path";
@@ -751,10 +752,53 @@ const pawnSymbolToPawnFunction = (doc: TextDocument, sym: PawnSymbol): PawnFunct
       insertText: insertText,
       documentation: "", // TODO: Extract comments
     },
-    definition: sym.location,
+    definition: {
+        uri: doc.uri,
+        range: sym.selectionRange,
+    },
     type: kind as any,
     params: params.length > 0 ? params : undefined,
   };
+};
+
+export const doDocumentSymbol = (textDocument: TextDocument): DocumentSymbol[] => {
+  const symbols = treeSitterParser.extractSymbols(textDocument);
+  return symbols.map((sym) => {
+    let kind: SymbolKind = SymbolKind.Function;
+    switch (sym.kind) {
+      case "macrodefine":
+        kind = SymbolKind.Constant;
+        break;
+      case "enum":
+        kind = SymbolKind.Enum;
+        break;
+      case "public":
+      case "stock":
+      case "native":
+      case "forward":
+        kind = SymbolKind.Function;
+        break;
+    }
+
+    return {
+      name: sym.name,
+      kind: kind,
+      range: sym.fullRange,
+      selectionRange: sym.selectionRange,
+    };
+  });
+};
+
+export const doFoldingRange = (textDocument: TextDocument): FoldingRange[] => {
+  const symbols = treeSitterParser.extractSymbols(textDocument);
+  return symbols.map((sym) => {
+    return {
+      startLine: sym.fullRange.start.line,
+      startCharacter: sym.fullRange.start.character,
+      endLine: sym.fullRange.end.line,
+      endCharacter: sym.fullRange.end.character,
+    };
+  });
 };
 
 export const parseSnippets = async (textDocument: TextDocument, reset = true) => {
