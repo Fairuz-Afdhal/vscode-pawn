@@ -1,0 +1,13 @@
+{
+  "name": "tree-sitter-pawn",
+  "version": "1.0.0",
+  "description": "Pawn grammar for tree-sitter",
+  "main": "bindings/node",
+  "devDependencies": {
+    "tree-sitter-cli": "^0.20.0"
+  },
+  "scripts": {
+    "build": "tree-sitter generate",
+    "test": "tree-sitter test"
+  }
+}
