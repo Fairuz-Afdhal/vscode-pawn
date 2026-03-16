@@ -13,6 +13,7 @@ import {
 } from "vscode-languageserver/node";
 
 import { TextDocument } from "vscode-languageserver-textdocument";
+import { treeSitterParser } from "./treeSitterParser";
 import { parseSnippets, doCompletion, doCompletionResolve, doGoToDef, doHover, doSignHelp, resetAutocompletes } from "./parser";
 
 export const connection = createConnection(ProposedFeatures.all);
@@ -20,7 +21,9 @@ export const documents = new TextDocuments(TextDocument);
 documents.listen(connection);
 connection.listen();
 
-connection.onInitialize(() => {
+connection.onInitialize(async () => {
+  await treeSitterParser.initialize();
+  connection.console.log("Pawn Tree-sitter parser initialized successfully.");
   return {
     capabilities: {
       textDocumentSync: TextDocumentSyncKind.Full,

@@ -12,6 +12,7 @@ import {
   MarkupKind,
 } from "vscode-languageserver";
 import { findFunctionIdentifier, positionToIndex, findIdentifierAtCursor, isPawnExt } from "./common";
+import { treeSitterParser, PawnSymbol } from "./treeSitterParser";
 import { TextDocument } from "vscode-languageserver-textdocument";
 import { connection } from "./server";
 import * as fs from "fs";
@@ -718,6 +719,44 @@ const isParseAllowed = async (textDocument: TextDocument) => {
   return true;
 };
 
+const pawnSymbolToPawnFunction = (doc: TextDocument, sym: PawnSymbol): PawnFunction => {
+  const node = sym.node;
+  const kind = sym.kind;
+
+  let completionKind: CompletionItemKind = CompletionItemKind.Function;
+  if (kind === "macrodefine") completionKind = CompletionItemKind.Variable;
+  if (kind === "enum") completionKind = CompletionItemKind.Enum;
+
+  let insertText = sym.name;
+  let label = sym.name;
+  let params: ParameterInformation[] = [];
+
+  if (node.type === "function_definition") {
+    const paramsNode = node.childForFieldName("parameters");
+    if (paramsNode) {
+      const args = paramsNode.text.replace(/^\(|\)$/g, "");
+      label = sym.name + "(" + args + ")";
+      insertText = sym.name + "(" + args + ")";
+      if (args.trim().length > 0) {
+        params = args.split(",").map((value) => ({ label: value.trim() }));
+      }
+    }
+  }
+
+  return {
+    textDocument: doc,
+    completion: {
+      label: label,
+      kind: completionKind,
+      insertText: insertText,
+      documentation: "", // TODO: Extract comments
+    },
+    definition: sym.location,
+    type: kind as any,
+    params: params.length > 0 ? params : undefined,
+  };
+};
+
 export const parseSnippets = async (textDocument: TextDocument, reset = true) => {
   const ext = path.extname(textDocument.uri);
   if (!isPawnExt(ext)) return false;
@@ -729,18 +768,6 @@ export const parseSnippets = async (textDocument: TextDocument, reset = true) =>
   }
   if (!(await isParseAllowed(textDocument))) return;
 
-  const allowDefine = (await connection.workspace.getConfiguration({
-    section: "pawn.language.allowDefine",
-  })) as true | false | null;
-  const allowDefineFunction = (await connection.workspace.getConfiguration({
-    section: "pawn.language.allowDefineFunction",
-  })) as true | false | null;
-  const allowFunction = (await connection.workspace.getConfiguration({
-    section: "pawn.language.allowFunction",
-  })) as true | false | null;
-  const allowNatives = (await connection.workspace.getConfiguration({
-    section: "pawn.language.allowNatives",
-  })) as true | false | null;
   const allowWords = (await connection.workspace.getConfiguration({
     section: "pawn.language.allowWords",
   })) as true | false | null;
@@ -748,15 +775,20 @@ export const parseSnippets = async (textDocument: TextDocument, reset = true) =>
     section: "pawn.language.allowCustomSnip",
   })) as true | false | null;
 
-  if (allowNatives) parseNatives(textDocument);
-  if (allowFunction) {
-    parseForward(textDocument);
-    parseFuncs(textDocument);
+  // Tree-sitter extraction
+  const symbols = treeSitterParser.extractSymbols(textDocument);
+  for (const sym of symbols) {
+    const pwnFun = pawnSymbolToPawnFunction(textDocument, sym);
+    const existing = pawnFuncCollection.get(sym.name);
+    if (!existing || existing.type === "function") {
+      pawnFuncCollection.set(sym.name, pwnFun);
+    }
   }
-  if (allowFunction) parseFuncsNonPrefix(textDocument);
+
+  // Keep these for now until we expand the grammar
   if (allowCustomSnip) parseCustomSnip(textDocument);
-  if (allowDefineFunction) parseFuncsDefines(textDocument);
-  if (allowDefine) parseDefine(textDocument);
+  parseFuncsDefines(textDocument); // For parameterized macros
+
   if (allowWords) parseWords(textDocument);
 };
 

@@ -6,7 +6,9 @@
     "sourceMap": true,
     "rootDir": "src",
     "outDir": "out",
-    "strict": true /* enable all strict type-checking options */
+    "strict": true /* enable all strict type-checking options */,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true
   },
   "exclude": ["node_modules", "scripts", ".vscode-test"]
 }
