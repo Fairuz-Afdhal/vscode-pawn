@@ -94,11 +94,23 @@ export class TreeSitterParser {
         case "if_statement":
         case "for_statement":
         case "while_statement":
+        case "foreach_statement":
         case "switch_statement":
         case "do_while_statement":
         case "case_statement":
         case "default_statement": {
-          const text = node.text.split("\n")[0].trim();
+          let text = node.text.split("\n")[0].trim();
+
+          // Check if this is an 'else if'
+          if (node.type === "if_statement" && node.parent?.type === "if_statement") {
+            // Find if there's an 'else' before this node in the parent's children
+            const siblings = node.parent.children;
+            const index = siblings.indexOf(node);
+            if (index > 0 && siblings[index - 1].type === "else") {
+              text = "else " + text;
+            }
+          }
+
           currentSymbol = {
             name: text,
             kind: "statement",
@@ -106,7 +118,7 @@ export class TreeSitterParser {
             fullRange: this.getNodeRange(node),
             selectionRange: {
               start: this.getNodeRange(node).start,
-              end: { line: node.startPosition.row, character: 1000 }, // Only the first line
+              end: { line: node.startPosition.row, character: 1000 },
             },
             children: [],
           };
@@ -123,6 +135,32 @@ export class TreeSitterParser {
         for (const child of node.children) {
           const childSymbols = visit(child);
           currentSymbol.children!.push(...childSymbols);
+        }
+
+        // Special handling for plain 'else' blocks (which are not if_statements)
+        if (node.type === "if_statement") {
+          const children = node.children;
+          for (let i = 0; i < children.length; i++) {
+            if (children[i].type === "else" && i + 1 < children.length) {
+              const next = children[i + 1];
+              // If the next node is NOT an if_statement (which is already handled by recursion), 
+              // but it's a block or statement, we want a symbol for it.
+              if (next.type !== "if_statement") {
+                const elseSymbol: PawnSymbol = {
+                  name: "else",
+                  kind: "statement",
+                  node: next,
+                  fullRange: this.getNodeRange(next),
+                  selectionRange: {
+                    start: { line: children[i].startPosition.row, character: children[i].startPosition.column },
+                    end: { line: children[i].startPosition.row, character: 1000 },
+                  },
+                  children: visit(next)
+                };
+                currentSymbol.children!.push(elseSymbol);
+              }
+            }
+          }
         }
       } else {
         for (const child of node.children) {
