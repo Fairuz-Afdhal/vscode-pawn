@@ -4,10 +4,12 @@
   "description": "Pawn grammar for tree-sitter",
   "main": "bindings/node",
   "devDependencies": {
-    "tree-sitter-cli": "^0.20.0"
+    "tree-sitter-cli": "^0.20.0",
+    "nan": "^2.19.0"
   },
   "scripts": {
     "build": "tree-sitter generate",
-    "test": "tree-sitter test"
+    "test": "tree-sitter test",
+    "build-wasm": "tree-sitter build-wasm"
   }
 }
