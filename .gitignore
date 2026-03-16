@@ -11,3 +11,11 @@ node_modules
 /test
 /Server
 /doc
+# Tree-sitter generated files
+pawn-grammar/src/parser.c
+pawn-grammar/src/grammar.json
+pawn-grammar/src/node-types.json
+pawn-grammar/src/tree_sitter/parser.h
+pawn-grammar/build/
+pawn-grammar/dist/
+*.wasm
