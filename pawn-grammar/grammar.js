@@ -70,7 +70,7 @@ module.exports = grammar({
     preproc_endif: ($) => "#endif",
     preproc_pragma: ($) => seq("#pragma", $.preproc_arg),
 
-    preproc_arg: ($) => /[^\n]+/,
+    preproc_arg: ($) => /.+/,
 
     system_lib_string: ($) => /<[^>]+>/,
 
@@ -80,7 +80,10 @@ module.exports = grammar({
       optional($._type),
       field("name", $.identifier),
       field("parameters", $.parameter_declarations),
-      field("body", $.block),
+      choice(
+        field("body", $.block),
+        ";"
+      ),
     ),
 
     visibility: ($) => choice("stock", "public", "static", "native", "forward"),
@@ -116,6 +119,22 @@ module.exports = grammar({
 
     array_dimension: ($) => repeat1(seq("[", optional($._expression), "]")),
 
+    enum_declaration: ($) => seq(
+      "enum",
+      optional(field("name", $.identifier)),
+      optional(seq("(", choice("+=", "*=", "<<="), $._expression, ")")),
+      "{",
+      commaSep($.enum_member),
+      "}",
+    ),
+
+    enum_member: ($) => seq(
+      optional($._type),
+      field("name", $.identifier),
+      optional(seq("[", $._expression, "]")),
+      optional(seq("=", $._expression)),
+    ),
+
     // Types / Tags
     _type: ($) => seq($.identifier, ":"),
 
@@ -133,6 +152,12 @@ module.exports = grammar({
       $.while_statement,
       $.for_statement,
       $.return_statement,
+      $.switch_statement,
+      $.do_while_statement,
+      $.assert_statement,
+      $.break_statement,
+      $.continue_statement,
+      $.goto_statement,
     ),
 
     expression_statement: ($) => seq($._expression, optional(";")),
@@ -162,6 +187,42 @@ module.exports = grammar({
 
     return_statement: ($) => seq("return", optional($._expression), optional(";")),
 
+    switch_statement: ($) => seq(
+      "switch",
+      "(", $._expression, ")",
+      "{",
+      repeat($._switch_case),
+      "}",
+    ),
+
+    _switch_case: ($) => choice($.case_statement, $.default_statement),
+
+    case_statement: ($) => seq(
+      "case",
+      commaSep1($._expression),
+      ":",
+      repeat($._statement),
+    ),
+
+    default_statement: ($) => seq(
+      "default",
+      ":",
+      repeat($._statement),
+    ),
+
+    do_while_statement: ($) => seq(
+      "do",
+      $._statement,
+      "while",
+      "(", $._expression, ")",
+      optional(";"),
+    ),
+
+    assert_statement: ($) => seq("assert", $._expression, optional(";")),
+    break_statement: ($) => seq("break", optional(";")),
+    continue_statement: ($) => seq("continue", optional(";")),
+    goto_statement: ($) => seq("goto", $.identifier, optional(";")),
+
     // Expressions
     _expression: ($) => choice(
       $.identifier,
@@ -172,7 +233,14 @@ module.exports = grammar({
       $.unary_expression,
       $.call_expression,
       $.parenthesized_expression,
+      $.sizeof_expression,
+      $.tagof_expression,
+      $.defined_expression,
     ),
+
+    sizeof_expression: ($) => seq("sizeof", choice($.identifier, $.parenthesized_expression)),
+    tagof_expression: ($) => seq("tagof", choice($.identifier, $.parenthesized_expression)),
+    defined_expression: ($) => seq("defined", $.identifier),
 
     assignment_expression: ($) => prec.right(PREC.ASSIGNMENT, seq(
       $._expression,
@@ -198,7 +266,7 @@ module.exports = grammar({
 
     unary_expression: ($) => choice(
       prec(PREC.UNARY, seq(choice("!", "~", "-", "++", "--"), $._expression)),
-      prec(PREC.UNARY, seq($._expression, choice("++", "--"))),
+      prec(PREC.UNARY, seq($._expression, choice("++", "--", "char"))),
     ),
 
     call_expression: ($) => prec(PREC.CALL, seq(
