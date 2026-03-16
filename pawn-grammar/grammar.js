@@ -89,7 +89,7 @@ module.exports = grammar({
       ),
     ),
 
-    visibility: ($) => choice("stock", "public", "static", "native", "forward"),
+    visibility: ($) => choice("stock", "public", "static", "native", "forward", "hook"),
 
     parameter_declarations: ($) => seq(
       "(",
@@ -236,11 +236,29 @@ module.exports = grammar({
       $.binary_expression,
       $.unary_expression,
       $.call_expression,
+      $.subscript_expression,
+      $.conditional_expression,
       $.parenthesized_expression,
       $.sizeof_expression,
       $.tagof_expression,
       $.defined_expression,
     ),
+
+    subscript_expression: ($) => prec(PREC.POSTFIX, seq(
+      $._expression,
+      choice(
+        seq("[", commaSep1($._expression), "]"),
+        seq("{", commaSep1($._expression), "}")
+      )
+    )),
+
+    conditional_expression: ($) => prec.right(PREC.TERNARY, seq(
+      field('condition', $._expression),
+      '?',
+      field('consequence', $._expression),
+      ':',
+      field('alternative', $._expression)
+    )),
 
     sizeof_expression: ($) => seq("sizeof", choice($.identifier, $.parenthesized_expression)),
     tagof_expression: ($) => seq("tagof", choice($.identifier, $.parenthesized_expression)),

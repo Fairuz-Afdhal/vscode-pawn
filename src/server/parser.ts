@@ -763,7 +763,8 @@ const pawnSymbolToPawnFunction = (doc: TextDocument, sym: PawnSymbol): PawnFunct
 
 export const doDocumentSymbol = (textDocument: TextDocument): DocumentSymbol[] => {
   const symbols = treeSitterParser.extractSymbols(textDocument);
-  return symbols.map((sym) => {
+  
+  const mapSymbol = (sym: PawnSymbol): DocumentSymbol => {
     let kind: SymbolKind = SymbolKind.Function;
     switch (sym.kind) {
       case "macrodefine":
@@ -772,10 +773,10 @@ export const doDocumentSymbol = (textDocument: TextDocument): DocumentSymbol[] =
       case "enum":
         kind = SymbolKind.Enum;
         break;
-      case "public":
-      case "stock":
-      case "native":
-      case "forward":
+      case "statement":
+        kind = SymbolKind.Namespace; // Use Namespace/Module for statements so they stick better
+        break;
+      default:
         kind = SymbolKind.Function;
         break;
     }
@@ -785,20 +786,35 @@ export const doDocumentSymbol = (textDocument: TextDocument): DocumentSymbol[] =
       kind: kind,
       range: sym.fullRange,
       selectionRange: sym.selectionRange,
+      children: sym.children ? sym.children.map(mapSymbol) : [],
     };
-  });
+  };
+
+  return symbols.map(mapSymbol);
 };
 
 export const doFoldingRange = (textDocument: TextDocument): FoldingRange[] => {
   const symbols = treeSitterParser.extractSymbols(textDocument);
-  return symbols.map((sym) => {
-    return {
+  const ranges: FoldingRange[] = [];
+
+  const visit = (sym: PawnSymbol) => {
+    ranges.push({
       startLine: sym.fullRange.start.line,
       startCharacter: sym.fullRange.start.character,
       endLine: sym.fullRange.end.line,
       endCharacter: sym.fullRange.end.character,
-    };
-  });
+    });
+    if (sym.children) {
+      for (const child of sym.children) {
+        visit(child);
+      }
+    }
+  };
+
+  for (const sym of symbols) {
+    visit(sym);
+  }
+  return ranges;
 };
 
 export const parseSnippets = async (textDocument: TextDocument, reset = true) => {

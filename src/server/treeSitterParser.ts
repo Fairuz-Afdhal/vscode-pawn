@@ -42,74 +42,120 @@ export class TreeSitterParser {
     const tree = this.parse(document);
     if (!tree) return [];
 
-    const symbols: PawnSymbol[] = [];
+    const visit = (node: Node): PawnSymbol[] => {
+      const symbols: PawnSymbol[] = [];
 
-    const visit = (node: Node) => {
+      let currentSymbol: PawnSymbol | undefined;
+
       switch (node.type) {
         case "function_definition": {
           const nameNode = node.childForFieldName("name");
           if (nameNode) {
             const visibility = node.child(0)?.type === "visibility" ? node.child(0)?.text : "function";
-            symbols.push({
+            currentSymbol = {
               name: nameNode.text,
               kind: visibility as PawnSymbol["kind"],
               node: node,
-              location: this.getNodeLocation(document, nameNode),
-            });
+              fullRange: this.getNodeRange(node),
+              selectionRange: this.getNodeRange(nameNode),
+              children: [],
+            };
           }
           break;
         }
         case "preproc_define": {
           const nameNode = node.childForFieldName("name");
           if (nameNode) {
-            symbols.push({
+            currentSymbol = {
               name: nameNode.text,
               kind: "macrodefine",
               node: node,
-              location: this.getNodeLocation(document, nameNode),
-            });
+              fullRange: this.getNodeRange(node),
+              selectionRange: this.getNodeRange(nameNode),
+              children: [],
+            };
           }
           break;
         }
         case "enum_declaration": {
           const nameNode = node.childForFieldName("name");
           if (nameNode) {
-            symbols.push({
-              name: nameNode.text,
+            currentSymbol = {
+              name: nameNode.text ?? "enum",
               kind: "enum",
               node: node,
-              location: this.getNodeLocation(document, nameNode),
-            });
+              fullRange: this.getNodeRange(node),
+              selectionRange: this.getNodeRange(nameNode),
+              children: [],
+            };
           }
+          break;
+        }
+        case "if_statement":
+        case "for_statement":
+        case "while_statement":
+        case "switch_statement":
+        case "do_while_statement":
+        case "case_statement":
+        case "default_statement": {
+          const text = node.text.split("\n")[0].trim();
+          currentSymbol = {
+            name: text,
+            kind: "statement",
+            node: node,
+            fullRange: this.getNodeRange(node),
+            selectionRange: {
+              start: this.getNodeRange(node).start,
+              end: { line: node.startPosition.row, character: 1000 }, // Only the first line
+            },
+            children: [],
+          };
+          break;
+        }
+        case "ERROR": {
+          // Skip ERROR nodes but continue visiting children
           break;
         }
       }
 
-      for (const child of node.children) {
-        visit(child);
+      if (currentSymbol) {
+        symbols.push(currentSymbol);
+        for (const child of node.children) {
+          const childSymbols = visit(child);
+          currentSymbol.children!.push(...childSymbols);
+        }
+      } else {
+        for (const child of node.children) {
+          symbols.push(...visit(child));
+        }
       }
+
+      return symbols;
     };
 
-    visit(tree.rootNode);
-    return symbols;
+    return visit(tree.rootNode);
   }
 
-  private getNodeLocation(document: TextDocument, node: Node) {
+  private getNodeRange(node: Node) {
     return {
-      uri: document.uri,
-      range: {
-        start: { line: node.startPosition.row, character: node.startPosition.column },
-        end: { line: node.endPosition.row, character: node.endPosition.column },
-      },
+      start: { line: node.startPosition.row, character: node.startPosition.column },
+      end: { line: node.endPosition.row, character: node.endPosition.column },
     };
+  }
+
+  public getTree(document: TextDocument): Node | undefined {
+    const tree = this.parse(document);
+    return tree?.rootNode;
   }
 }
 
 export interface PawnSymbol {
   name: string;
-  kind: "function" | "native" | "forward" | "public" | "stock" | "macrodefine" | "macrofunction" | "enum";
+  kind: "function" | "native" | "forward" | "public" | "stock" | "macrodefine" | "macrofunction" | "enum" | "statement";
   node: Node;
-  location: any;
+  fullRange: any;
+  selectionRange: any;
+  children?: PawnSymbol[];
 }
 
 export const treeSitterParser = new TreeSitterParser();

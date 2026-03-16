@@ -1,13 +1,13 @@
 import BuildTaskHandler from "./buildTask";
-import PawnDocumentFormattingEditProvider from "./formatter";
+import PawnDocumentFormattingEditProvider, { formatActiveDocument } from "./formatter";
 import * as vscode from "vscode";
 import { initSnippetCollector } from "./commonFunc";
 import path = require("path");
 import { LanguageClient, LanguageClientOptions, ServerOptions, State, TransportKind } from "vscode-languageclient/node";
 import { addToPawnIgnore, InitPawnIgnore } from "./whitelistedpaths";
-import PawnFoldingProvider from "./FoldingProvider";
 
 export let client: LanguageClient;
+let formattingProvider: vscode.Disposable | undefined;
 
 export async function activate(context: vscode.ExtensionContext) {
   // The server is implemented in node
@@ -20,11 +20,37 @@ export async function activate(context: vscode.ExtensionContext) {
     })
   );
   context.subscriptions.push(
-    vscode.languages.registerFoldingRangeProvider({ scheme: "file", language: "pawn" }, new PawnFoldingProvider())
+    vscode.commands.registerCommand("pawn-development.format", formatActiveDocument),
+    vscode.commands.registerCommand("pawn-development.debugTree", async () => {
+      const editor = vscode.window.activeTextEditor;
+      if (!editor) return;
+      const response = await client.sendRequest("pawn/getTree", { uri: editor.document.uri.toString() });
+      const channel = vscode.window.createOutputChannel("Pawn Tree-sitter");
+      channel.append(response as string);
+      channel.show();
+    })
   );
 
-  vscode.languages.registerDocumentFormattingEditProvider("pawn", PawnDocumentFormattingEditProvider);
-  vscode.languages.registerDocumentRangeFormattingEditProvider("pawn", PawnDocumentFormattingEditProvider);
+  const updateFormattingProviders = () => {
+    const enabled = vscode.workspace.getConfiguration().get("pawn.language.format.enabled");
+    if (enabled && !formattingProvider) {
+      const d1 = vscode.languages.registerDocumentFormattingEditProvider("pawn", PawnDocumentFormattingEditProvider);
+      const d2 = vscode.languages.registerDocumentRangeFormattingEditProvider("pawn", PawnDocumentFormattingEditProvider);
+      formattingProvider = vscode.Disposable.from(d1, d2);
+      context.subscriptions.push(formattingProvider);
+    } else if (!enabled && formattingProvider) {
+      formattingProvider.dispose();
+      formattingProvider = undefined;
+    }
+  };
+
+  updateFormattingProviders();
+
+  vscode.workspace.onDidChangeConfiguration((e) => {
+    if (e.affectsConfiguration("pawn.language.format.enabled")) {
+      updateFormattingProviders();
+    }
+  });
 
   vscode.workspace.onDidChangeWorkspaceFolders(() => {
     initSnippetCollector(true);
