@@ -13,6 +13,7 @@ const PREC = {
   ADD: 11,
   MULTIPLY: 12,
   UNARY: 14,
+  POSTFIX: 15,
   CALL: 16,
   FIELD: 17,
 };
@@ -26,10 +27,10 @@ module.exports = grammar({
   ],
 
   conflicts: ($) => [
-    [$._type, $._expression],
-    [$.parameter_declaration, $._type],
     [$.visibility, $.variable_declaration_statement],
     [$.return_statement],
+    [$.string_literal],
+    [$.variable_declaration_statement],
   ],
 
   word: ($) => $.identifier,
@@ -269,7 +270,7 @@ module.exports = grammar({
 
     unary_expression: ($) => choice(
       prec(PREC.UNARY, seq(choice("!", "~", "-", "++", "--"), $._expression)),
-      prec(PREC.UNARY, seq($._expression, choice("++", "--", "char"))),
+      prec(PREC.POSTFIX, seq($._expression, choice("++", "--", "char"))),
     ),
 
     call_expression: ($) => prec(PREC.CALL, seq(
@@ -295,11 +296,21 @@ module.exports = grammar({
       /\d+\.\d+/,
     ),
 
-    string_literal: ($) => seq(
-      optional("!"),
-      '"',
-      repeat(choice(/[^"\\\n]+/, $.escape_sequence)),
-      '"',
+    string_literal: ($) => choice(
+      seq(
+        optional("!"),
+        '"',
+        repeat(choice(/[^"\\\n]+/, $.escape_sequence)),
+        '"',
+      ),
+      // Plain strings (escapes ignored)
+      seq(
+        optional("!"),
+        "\\",
+        '"',
+        repeat(/[^"\n]+/),
+        '"',
+      ),
     ),
 
     escape_sequence: ($) => /\\[abfnrtv\\'"]/,
