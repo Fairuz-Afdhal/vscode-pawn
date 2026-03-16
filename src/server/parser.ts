@@ -86,6 +86,15 @@ export const parseDefine = (textDocument: TextDocument) => {
   });
 };
 
+// Pawn reserved keywords that should never appear as autocomplete items
+// (even if defined as macros in included files like YSI's foreach)
+const PAWN_KEYWORDS = new Set([
+  "if", "else", "for", "while", "do", "switch", "case", "default",
+  "return", "break", "continue", "goto", "new", "static", "const",
+  "stock", "public", "forward", "native", "hook", "enum", "sizeof",
+  "tagof", "defined", "assert", "foreach",
+]);
+
 export const parseFuncsDefines = (textDocument: TextDocument) => {
   const regex = /^(\s*)#define\s+([\S]{1,})\((.*?)\)/gm;
   const content = textDocument.getText();
@@ -163,6 +172,7 @@ export const parseFuncsDefines = (textDocument: TextDocument) => {
           // const resOut = /:(.*)/gm.exec(func);
           // if (resOut) func = resOut[1];
           // }
+          if (PAWN_KEYWORDS.has(func)) continue; // Skip reserved keywords
           const findSnip = pawnFuncCollection.get(func);
           if (findSnip === undefined) {
             pawnFuncCollection.set(func, pwnFun);
