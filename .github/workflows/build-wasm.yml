@@ -18,20 +18,18 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      - name: Install tree-sitter-cli
+        run: npm install -g tree-sitter-cli
+
       - name: Generate Parser
         run: |
           cd pawn-grammar
-          npx tree-sitter generate
-
-      - name: Install dependencies
-        run: |
-          cd pawn-grammar
-          npm install --ignore-scripts
+          tree-sitter generate
 
       - name: Build WASM
         run: |
           cd pawn-grammar
-          npx tree-sitter build-wasm
+          tree-sitter build-wasm
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
