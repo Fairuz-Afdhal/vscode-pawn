@@ -109,6 +109,7 @@ export class TreeSitterParser {
         case "while_statement":
         case "foreach_statement":
         case "switch_statement":
+        case "state_statement":
         case "do_while_statement":
         case "case_statement":
         case "default_statement": {
@@ -130,9 +131,17 @@ export class TreeSitterParser {
             name = node.type.replace("_statement", "");
           }
 
+          // Use specific kinds for better mapping in parser.ts
+          let kind: PawnSymbol["kind"] = "statement";
+          if (node.type === "if_statement") kind = "if";
+          else if (node.type === "switch_statement") kind = "switch";
+          else if (node.type === "state_statement") kind = "state";
+          else if (node.type === "case_statement" || node.type === "default_statement") kind = "case";
+          else if (node.type === "for_statement" || node.type === "foreach_statement" || node.type === "while_statement" || node.type === "do_while_statement") kind = "repetition";
+
           currentSymbol = {
             name: name,
-            kind: "statement",
+            kind: kind,
             node: node,
             fullRange: this.getNodeRange(node),
             selectionRange: {
@@ -164,7 +173,7 @@ export class TreeSitterParser {
               if (next.type !== "if_statement") {
                 const elseSymbol: PawnSymbol = {
                   name: "else",
-                  kind: "statement",
+                  kind: "if",
                   node: next,
                   fullRange: this.getNodeRange(next),
                   selectionRange: {
@@ -205,7 +214,7 @@ export class TreeSitterParser {
 
 export interface PawnSymbol {
   name: string;
-  kind: "function" | "native" | "forward" | "public" | "stock" | "macrodefine" | "macrofunction" | "enum" | "statement";
+  kind: "function" | "native" | "forward" | "public" | "stock" | "macrodefine" | "macrofunction" | "enum" | "statement" | "if" | "switch" | "case" | "repetition" | "state";
   node: Node;
   fullRange: any;
   selectionRange: any;

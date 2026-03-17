@@ -37,6 +37,9 @@ module.exports = grammar({
     [$._statement, $.default_statement],
     [$._expression, $.comma_expression],
     [$._expression, $.concatenated_string],
+    [$.exit_statement],
+    [$.sleep_statement],
+    [$.state_statement],
   ],
 
   word: ($) => $.identifier,
@@ -88,11 +91,23 @@ module.exports = grammar({
       optional($.visibility),
       optional($._type),
       field("name", $.identifier),
+      optional(field("state", $.state_suffix)),
       field("parameters", $.parameter_declarations),
       choice(
         field("body", $.block),
         ";"
       ),
+    ),
+
+    state_suffix: ($) => seq(
+      "<",
+      commaSep1($.state_name),
+      ">"
+    ),
+
+    state_name: ($) => seq(
+      $.identifier,
+      optional(seq(":", $.identifier))
     ),
 
     visibility: ($) => choice("stock", "public", "static", "native", "forward", "hook"),
@@ -169,6 +184,9 @@ module.exports = grammar({
       $.break_statement,
       $.continue_statement,
       $.goto_statement,
+      $.state_statement,
+      $.sleep_statement,
+      $.exit_statement,
     ),
 
     expression_statement: ($) => seq($._expression, optional(";")),
@@ -244,6 +262,18 @@ module.exports = grammar({
     break_statement: ($) => seq("break", optional(";")),
     continue_statement: ($) => seq("continue", optional(";")),
     goto_statement: ($) => seq("goto", $.identifier, optional(";")),
+
+    state_statement: ($) => seq(
+      "state",
+      choice(
+        seq($.state_name, optional($.state_suffix)),
+        seq("(", $._expression, ")", $.state_name, optional($.state_suffix))
+      ),
+      optional(";")
+    ),
+
+    sleep_statement: ($) => seq("sleep", $._expression, optional(";")),
+    exit_statement: ($) => seq("exit", optional($._expression), optional(";")),
 
     // Expressions
     _expression: ($) => choice(

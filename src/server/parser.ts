@@ -92,7 +92,11 @@ const PAWN_KEYWORDS = new Set([
   "if", "else", "for", "while", "do", "switch", "case", "default",
   "return", "break", "continue", "goto", "new", "static", "const",
   "stock", "public", "forward", "native", "hook", "enum", "sizeof",
-  "tagof", "defined", "assert", "foreach",
+  "tagof", "defined", "assert", "foreach", "state", "sleep", "exit",
+  "align", "amxlimit", "amxram", "codepage", "ctrlchar", "deprecated",
+  "dynamic", "export", "File", "Fixed", "Float", "in", "library",
+  "operator", "overlay", "pack", "rational", "semicolon", "tabsize",
+  "unused", "bool", "true", "false",
 ]);
 
 export const parseFuncsDefines = (textDocument: TextDocument) => {
@@ -783,8 +787,23 @@ export const doDocumentSymbol = (textDocument: TextDocument): DocumentSymbol[] =
       case "enum":
         kind = SymbolKind.Enum;
         break;
+      case "if":
+        kind = SymbolKind.Namespace;
+        break;
+      case "switch":
+        kind = SymbolKind.Module;
+        break;
+      case "case":
+        kind = SymbolKind.Struct;
+        break;
+      case "repetition":
+        kind = SymbolKind.Interface;
+        break;
+      case "state":
+        kind = SymbolKind.EnumMember;
+        break;
       case "statement":
-        kind = SymbolKind.Namespace; // Use Namespace/Module for statements so they stick better
+        kind = SymbolKind.Namespace;
         break;
       default:
         kind = SymbolKind.Function;
