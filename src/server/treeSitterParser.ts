@@ -54,20 +54,16 @@ export class TreeSitterParser {
         case "function_definition": {
           const nameNode = node.childForFieldName("name");
           if (nameNode) {
-            const visibility = node.child(0)?.type === "visibility" ? node.child(0)?.text : "function";
-            const firstLine = node.text.split("\n")[0].trim();
-            let name = firstLine;
-            if (name.endsWith("{")) name = name.slice(0, -1).trim();
-
+            // Find explicit visibility keyword, or default to "function"
+            const visibilityNode = node.children.find(c => ["new", "stock", "public", "static", "native", "forward", "hook"].includes(c.text) || c.type === "visibility");
+            const visibility = visibilityNode ? visibilityNode.text : "function";
+            
             currentSymbol = {
-              name: name,
-              kind: visibility as PawnSymbol["kind"],
+              name: nameNode.text,
+              kind: (visibility === "new" ? "function" : visibility) as PawnSymbol["kind"],
               node: node,
               fullRange: this.getNodeRange(node),
-              selectionRange: {
-                start: this.getNodeRange(node).start,
-                end: { line: node.startPosition.row, character: 1000 },
-              },
+              selectionRange: this.getNodeRange(nameNode),
               children: [],
             };
           }
@@ -76,38 +72,57 @@ export class TreeSitterParser {
         case "preproc_define": {
           const nameNode = node.childForFieldName("name");
           if (nameNode) {
-            const firstLine = node.text.split("\n")[0].trim();
             currentSymbol = {
-              name: firstLine,
+              name: nameNode.text,
               kind: "macrodefine",
               node: node,
               fullRange: this.getNodeRange(node),
-              selectionRange: {
-                start: this.getNodeRange(node).start,
-                end: { line: node.startPosition.row, character: 1000 },
-              },
+              selectionRange: this.getNodeRange(nameNode),
               children: [],
             };
           }
           break;
         }
         case "enum_declaration": {
-          const firstLine = node.text.split("\n")[0].trim();
-          let name = firstLine;
-          if (name.endsWith("{")) name = name.slice(0, -1).trim();
-
+          const nameNode = node.childForFieldName("name");
+          const name = nameNode ? nameNode.text : "enum";
           currentSymbol = {
             name: name,
             kind: "enum",
             node: node,
             fullRange: this.getNodeRange(node),
-            selectionRange: {
-              start: this.getNodeRange(node).start,
-              end: { line: node.startPosition.row, character: 1000 },
-            },
+            selectionRange: nameNode ? this.getNodeRange(nameNode) : this.getNodeRange(node),
             children: [],
           };
           break;
+        }
+        case "enum_member": {
+          const nameNode = node.childForFieldName("name");
+          if (nameNode) {
+            currentSymbol = {
+                name: nameNode.text,
+                kind: "enum", // Or another kind if preferred
+                node: node,
+                fullRange: this.getNodeRange(node),
+                selectionRange: this.getNodeRange(nameNode),
+                children: [],
+            };
+          }
+          break;
+        }
+        case "variable_declaration": {
+            const nameNode = node.childForFieldName("name");
+            if (nameNode && (node.parent?.type === "variable_declaration_statement" || node.parent?.type === "enum_declaration")) {
+              currentSymbol = {
+                name: nameNode.text,
+                kind: "statement",
+                node: node,
+                fullRange: this.getNodeRange(node),
+                selectionRange: this.getNodeRange(nameNode),
+                children: [],
+              };
+            }
+            break;
         }
         case "if_statement":
         case "for_statement":
@@ -211,6 +226,109 @@ export class TreeSitterParser {
     };
 
     return visit(tree.rootNode);
+  }
+
+  public findDefinition(document: TextDocument, position: { line: number; character: number }): { definition?: { uri: string; range: any }; identifier?: string } {
+    const tree = this.parse(document);
+    if (!tree) return {};
+
+    const offset = document.offsetAt(position);
+    let node: Node | null = tree.rootNode.descendantForIndex(offset);
+
+    console.log(`tree-sitter: findDefinition at ${position.line}:${position.character} (offset ${offset})`);
+
+    // If it's a variable_declaration, drill down to the name
+    if (node && node.type === "variable_declaration") {
+      node = node.childForFieldName("name");
+    }
+
+    // If we're on a non-identifier node, check the previous character (common in LSP)
+    if (node && node.type !== "identifier" && offset > 0) {
+      const prevNode = tree.rootNode.descendantForIndex(offset - 1);
+      if (prevNode && (prevNode.type === "identifier" || prevNode.type === "variable_declaration")) {
+        console.log(`tree-sitter: found ${prevNode.type} on previous byte`);
+        node = prevNode.type === "variable_declaration" ? prevNode.childForFieldName("name") : prevNode;
+      }
+    }
+
+    if (!node || node.type !== "identifier") {
+      console.log(`tree-sitter: no identifier found at cursor (node type: ${node?.type})`);
+      return {};
+    }
+
+    const name = node.text;
+    console.log(`tree-sitter: searching for definition of "${name}"`);
+    let current: Node | null = node;
+
+    while (current) {
+      // Check for variables declared in blocks (compound_statement)
+      if (current.type === "compound_statement") {
+        const ancestor = this.findAncestorIn(node, current.children);
+        if (ancestor) {
+          const index = current.children.indexOf(ancestor);
+          for (let i = index; i >= 0; i--) {
+            const sibling = current.children[i];
+            const found = this.findVarInNode(sibling, name);
+            if (found) return { definition: { uri: document.uri, range: this.getNodeRange(found) }, identifier: name };
+          }
+        }
+      }
+
+      // Check for variables in headers (for_statement, foreach_statement)
+      if (current.type === "for_statement" || current.type === "foreach_statement") {
+        const found = this.findVarInNode(current, name);
+        if (found) return { definition: { uri: document.uri, range: this.getNodeRange(found) }, identifier: name };
+      }
+
+      // Check parameters if inside a function_definition
+      if (current.type === "function_definition") {
+        const params = current.childForFieldName("parameters");
+        if (params) {
+          for (const param of params.children) {
+            if (param.type === "parameter_declaration") {
+              const paramName = param.childForFieldName("name");
+              if (paramName && paramName.text === name) {
+                return { definition: { uri: document.uri, range: this.getNodeRange(paramName) }, identifier: name };
+              }
+            }
+          }
+        }
+      }
+
+      current = current.parent;
+    }
+
+    return { identifier: name };
+  }
+
+  private findVarInNode(node: Node, name: string): Node | null {
+    // Check if the node itself is a declaration or contains declarations
+    if (node.type === "variable_declaration_statement") {
+      for (const child of node.children) {
+        if (child.type === "variable_declaration") {
+          const varName = child.childForFieldName("name");
+          if (varName && varName.text === name) return varName;
+        }
+      }
+    }
+
+    // For loop headers, declarations are often direct children
+    for (const child of node.children) {
+      if (child.type === "variable_declaration") {
+        const varName = child.childForFieldName("name");
+        if (varName && varName.text === name) return varName;
+      }
+    }
+    return null;
+  }
+
+  private findAncestorIn(node: Node, list: Node[]): Node | null {
+    let curr: Node | null = node;
+    while (curr) {
+      if (list.includes(curr)) return curr;
+      curr = curr.parent;
+    }
+    return null;
   }
 
   private getNodeRange(node: Node) {

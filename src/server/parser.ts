@@ -945,10 +945,28 @@ export const doSignHelp = (document: TextDocument, position: Position): Signatur
 export const doGoToDef = (document: TextDocument, position: Position) => {
   const ext = path.extname(document.uri);
   if (!isPawnExt(ext)) return undefined;
-  const cursorIndex = positionToIndex(document.getText(), position);
-  const result = findIdentifierAtCursor(document.getText(), cursorIndex);
-  if (result.identifier.length === 0) return;
-  const snip = pawnFuncCollection.get(result.identifier);
-  if (snip === undefined) return;
-  return snip.definition;
+
+  // 1. Try Tree-sitter for local/structural definitions
+  const treeResult = treeSitterParser.findDefinition(document, position);
+  if (treeResult.definition) return treeResult.definition;
+
+  // 2. Fallback to global symbol map using the identifier Tree-sitter found
+  const identifier = treeResult.identifier;
+  if (!identifier) {
+    // Last resort: old regex-based lookup if Tree-sitter didn't find even an identifier
+    const cursorIndex = positionToIndex(document.getText(), position);
+    const result = findIdentifierAtCursor(document.getText(), cursorIndex);
+    if (result.identifier.length === 0) return;
+    const snip = pawnFuncCollection.get(result.identifier);
+    return snip?.definition;
+  }
+
+  const snip = pawnFuncCollection.get(identifier);
+  if (snip) {
+    console.log(`doGoToDef: found global definition for "${identifier}" in collection.`);
+    return snip.definition;
+  }
+  
+  console.log(`doGoToDef: "${identifier}" not found in global collection.`);
+  return undefined;
 };
