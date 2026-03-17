@@ -26,6 +26,7 @@ interface PawnFunction {
   completion: CompletionItem;
   definition: Definition;
   params?: ParameterInformation[];
+  summary?: string;
 }
 const pawnFuncCollection: Map<string, PawnFunction> = new Map();
 const pawnWords: Map<string, CompletionItem[]> = new Map();
@@ -144,12 +145,13 @@ export const parseFuncsDefines = (textDocument: TextDocument) => {
               }
             }
           }
-          doc = doc.replace("/*", "").replace("*/", "").trim();
+          const parsedDoc = treeSitterParser.parseXmlDoc(doc);
+          const summary = treeSitterParser.parseXmlDoc(doc, true);
           const newSnip: CompletionItem = {
             label: func + "(" + args + ")",
             kind: CompletionItemKind.Function,
             insertText: func + "(" + args + ")",
-            documentation: doc,
+            documentation: parsedDoc,
           };
           const newDef: Definition = Location.create(textDocument.uri, {
             start: { line: index, character: m.input.indexOf(args) },
@@ -527,13 +529,14 @@ export const parseFuncsNonPrefix = (textDocument: TextDocument) => {
               }
             }
           }
-          doc = doc.replace("/*", "").replace("*/", "").trim();
+          const parsedDoc = treeSitterParser.parseXmlDoc(doc);
+          const summary = treeSitterParser.parseXmlDoc(doc, true);
           const noTagFunc = func.replace(/^[^:]*:/gm, "");
           const newSnip: CompletionItem = {
             label: func + "(" + args + ")",
             kind: CompletionItemKind.Function,
             insertText: noTagFunc,
-            documentation: doc,
+            documentation: parsedDoc,
           };
           const newDef: Definition = Location.create(textDocument.uri, {
             start: { line: index, character: m.input.indexOf(noTagFunc) },
@@ -554,18 +557,15 @@ export const parseFuncsNonPrefix = (textDocument: TextDocument) => {
             completion: newSnip,
             params,
             type: "function",
+            summary: summary
           };
-          // const indexPos = func.indexOf(':');
-          // if (indexPos !== -1) {
-          // const resOut = /:(.*)/gm.exec(func);
-          // if (resOut) func = resOut[1];
-          // }
           const findSnip = pawnFuncCollection.get(noTagFunc);
           if (findSnip === undefined) {
             pawnFuncCollection.set(noTagFunc, pwnFun);
           } else {
-            if (findSnip.type === "macrofunction" || findSnip.type === "macrodefine" || findSnip.type === "customsnip")
-              pawnFuncCollection.set(noTagFunc, pwnFun);
+            const oldPrio = getPriority(findSnip.type);
+            const newPrio = getPriority("function");
+            if (newPrio >= oldPrio) pawnFuncCollection.set(noTagFunc, pwnFun);
           }
         }
       } while (m);
@@ -618,13 +618,14 @@ export const parseNatives = (textDocument: TextDocument) => {
               }
             }
           }
-          doc = doc.replace("/*", "").replace("*/", "").trim();
+          const parsedDoc = treeSitterParser.parseXmlDoc(doc);
+          const summary = treeSitterParser.parseXmlDoc(doc, true);
           const noTagFunc = func.replace(/^[^:]*:/gm, "");
           const newSnip: CompletionItem = {
             label: func + "(" + args + ")",
             kind: CompletionItemKind.Function,
             insertText: noTagFunc,
-            documentation: doc,
+            documentation: parsedDoc,
           };
           const newDef: Definition = Location.create(textDocument.uri, {
             start: { line: index, character: m.input.indexOf(noTagFunc) },
@@ -635,7 +636,15 @@ export const parseNatives = (textDocument: TextDocument) => {
           });
           let params: ParameterInformation[] = [];
           if (args.trim().length > 0) {
-            params = args.split(",").map((value) => ({ label: value.trim() }));
+            params = args.split(",").map((value) => {
+              const trimmed = value.trim();
+              // Strip tag prefix (e.g. "Float:spawnX") and default value (e.g. "= false") to match <param name="..."> in XML doc
+              const bareParam = trimmed.replace(/^[^:]*:/, "").replace(/\s*=.*$/, "").replace(/[&*[\]]/g, "").trim();
+              const escapedParam = escapeRegExp(bareParam);
+              const paramMatch = doc.match(new RegExp(`<param name="${escapedParam}">(.*?)<\\/param>`, "is"));
+              const paramDoc = paramMatch ? treeSitterParser.parseXmlDoc(paramMatch[1].trim()) : undefined;
+              return { label: trimmed, documentation: paramDoc };
+            });
           } else {
             params = [];
           }
@@ -645,17 +654,15 @@ export const parseNatives = (textDocument: TextDocument) => {
             completion: newSnip,
             params,
             type: "native",
+            summary: summary
           };
-          // const indexPos = func.indexOf(':');
-          // if (indexPos !== -1) {
-          // const resOut = /:(.*)/gm.exec(func);
-          // if (resOut) func = resOut[1];
-          // }
           const findSnip = pawnFuncCollection.get(noTagFunc);
           if (findSnip === undefined) {
             pawnFuncCollection.set(noTagFunc, pwnFun);
           } else {
-            if (findSnip.type !== "customsnip") pawnFuncCollection.set(noTagFunc, pwnFun);
+            const oldPrio = getPriority(findSnip.type);
+            const newPrio = getPriority("native");
+            if (newPrio >= oldPrio) pawnFuncCollection.set(noTagFunc, pwnFun);
           }
         }
       } while (m);
@@ -702,6 +709,10 @@ export const parseWords = (textDocument: TextDocument) => {
   pawnWords.set(textDocument.uri, wordCompletion);
 };
 
+const escapeRegExp = (string: string) => {
+  return string.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); // $& means the whole matched string
+};
+
 const getTextDocumentWorkspacePath = async (textDocument: TextDocument) => {
   const workspaceFolders = await connection.workspace.getWorkspaceFolders();
   if (workspaceFolders === null) return undefined;
@@ -734,7 +745,7 @@ const isParseAllowed = async (textDocument: TextDocument) => {
   return true;
 };
 
-const pawnSymbolToPawnFunction = (doc: TextDocument, sym: PawnSymbol): PawnFunction => {
+const pawnSymbolToPawnFunction = (doc: TextDocument, sym: PawnSymbol): void => {
   const node = sym.node;
   const kind = sym.kind;
 
@@ -746,6 +757,15 @@ const pawnSymbolToPawnFunction = (doc: TextDocument, sym: PawnSymbol): PawnFunct
   let label = sym.name;
   let params: ParameterInformation[] = [];
 
+  // Extract documentation
+  let searchNode = node;
+  while (searchNode && searchNode.type !== "variable_declaration_statement" && searchNode.type !== "function_definition" && searchNode.type !== "enum_member") {
+      searchNode = searchNode.parent!;
+  }
+  const docComment = treeSitterParser.findDocComment(searchNode || node);
+  const documentation = treeSitterParser.parseXmlDoc(docComment);
+  const summary = treeSitterParser.parseXmlDoc(docComment, true);
+
   if (node.type === "function_definition") {
     const paramsNode = node.childForFieldName("parameters");
     if (paramsNode) {
@@ -753,26 +773,61 @@ const pawnSymbolToPawnFunction = (doc: TextDocument, sym: PawnSymbol): PawnFunct
       label = sym.name + "(" + args + ")";
       insertText = sym.name + "(" + args + ")";
       if (args.trim().length > 0) {
-        params = args.split(",").map((value) => ({ label: value.trim() }));
+        params = args.split(",").map((value) => {
+            const trimmed = value.trim();
+            // Strip tag prefix (e.g. "Float:spawnX" -> "spawnX") and default value (e.g. "= false")
+            // before matching against <param name="..."> in the XML doc
+            const bareParam = trimmed.replace(/^[^:]*:/, "").replace(/\s*=.*$/, "").replace(/[&*[\]]/g, "").trim();
+            const escapedParam = escapeRegExp(bareParam);
+            const paramMatch = docComment.match(new RegExp(`<param name="${escapedParam}">(.*?)<\/param>`, "is"));
+            const paramDoc = paramMatch ? treeSitterParser.parseXmlDoc(paramMatch[1].trim()) : undefined;
+            return { 
+                label: trimmed,
+                documentation: paramDoc
+            };
+        });
       }
     }
   }
 
-  return {
-    textDocument: doc,
-    completion: {
-      label: label,
-      kind: completionKind,
-      insertText: insertText,
-      documentation: "", // TODO: Extract comments
-    },
-    definition: {
-        uri: doc.uri,
-        range: sym.selectionRange,
-    },
-    type: kind as any,
-    params: params.length > 0 ? params : undefined,
-  };
+  const findSnip = pawnFuncCollection.get(sym.name);
+  // Priority: native > function/forward > macro
+  let shouldUpdate = true;
+  if (findSnip) {
+    const oldPrio = getPriority(findSnip.type);
+    const newPrio = getPriority(kind as any);
+    if (oldPrio > newPrio) shouldUpdate = false;
+  }
+
+  if (shouldUpdate) {
+    pawnFuncCollection.set(sym.name, {
+        textDocument: doc,
+        completion: {
+          label: label,
+          kind: completionKind,
+          insertText: insertText,
+          documentation: documentation, 
+        },
+        summary: summary,
+        definition: {
+            uri: doc.uri,
+            range: sym.selectionRange,
+        },
+        type: kind as any,
+        params: params.length > 0 ? params : undefined,
+    });
+  }
+};
+
+const getPriority = (type: string): number => {
+  switch (type) {
+    case "native": return 4;
+    case "function": return 3;
+    case "forward": return 2;
+    case "macrofunction": return 1;
+    case "macrodefine": return 0;
+    default: return 0;
+  }
 };
 
 export const doDocumentSymbol = (textDocument: TextDocument): DocumentSymbol[] => {
@@ -867,11 +922,7 @@ export const parseSnippets = async (textDocument: TextDocument, reset = true) =>
   // Tree-sitter extraction
   const symbols = treeSitterParser.extractSymbols(textDocument);
   for (const sym of symbols) {
-    const pwnFun = pawnSymbolToPawnFunction(textDocument, sym);
-    const existing = pawnFuncCollection.get(sym.name);
-    if (!existing || existing.type === "function") {
-      pawnFuncCollection.set(sym.name, pwnFun);
-    }
+    pawnSymbolToPawnFunction(textDocument, sym);
   }
 
   // Keep these for now until we expand the grammar
@@ -900,11 +951,25 @@ export const doCompletionResolve = async (item: CompletionItem) => {
 export const doHover = (document: TextDocument, position: Position): Hover | undefined => {
   const ext = path.extname(document.uri);
   if (!isPawnExt(ext)) return undefined;
+
+  // 1. Try Tree-sitter for local/rich hover
+  const treeHover = treeSitterParser.getHoverInfo(document, position);
+  if (treeHover) {
+      return {
+          contents: {
+              kind: MarkupKind.Markdown,
+              value: treeHover
+          }
+      };
+  }
+
+  // 2. Fallback to global collection
   const cursorIndex = positionToIndex(document.getText(), position);
   const result = findIdentifierAtCursor(document.getText(), cursorIndex);
   if (result.identifier.length === 0) return undefined;
   const snip = pawnFuncCollection.get(result.identifier);
   if (snip === undefined) return undefined;
+  const summary = snip.summary || (typeof snip.completion.documentation === 'string' ? snip.completion.documentation : snip.completion.documentation?.value) || "";
   const markdown: MarkupContent = {
     kind: MarkupKind.Markdown,
     value: [
@@ -912,7 +977,7 @@ export const doHover = (document: TextDocument, position: Position): Hover | und
       snip.completion.label !== undefined && snip.completion.label,
       "```",
       "---",
-      snip.completion.documentation !== undefined && snip.completion.documentation.toString(),
+      summary,
     ].join("\n"),
   };
   return {
@@ -923,20 +988,78 @@ export const doHover = (document: TextDocument, position: Position): Hover | und
 export const doSignHelp = (document: TextDocument, position: Position): SignatureHelp | undefined => {
   const ext = path.extname(document.uri);
   if (!isPawnExt(ext)) return undefined;
+
+  // VSCode's signature help widget does not render markdown bold/code in the documentation area,
+  // so strip inline markers to avoid showing ** and ` literally.
+  const stripInlineMarkdown = (text: string): string =>
+    text
+      .replace(/\*\*([^*]+)\*\*/g, "$1")   // **bold** -> bold
+      .replace(/\*([^*]+)\*/g, "$1")        // *italic* -> italic
+      .replace(/`([^`]+)`/g, "$1")          // `code` -> code
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1"); // [text](url) -> text
+
+  const fullSummary = (snip: PawnFunction): string =>
+    snip.summary || (typeof snip.completion.documentation === 'string' ? snip.completion.documentation : snip.completion.documentation?.value) || "";
+
+  const buildSignatureDoc = (snip: PawnFunction, activeParamIdx: number, hasArgs: boolean): string => {
+    if (!hasArgs) return stripInlineMarkdown(fullSummary(snip));
+    const param = snip.params?.[activeParamIdx];
+    if (param) {
+      const paramDoc = typeof param.documentation === 'string' ? param.documentation : param.documentation?.value;
+      if (paramDoc) {
+        const label = typeof param.label === 'string' ? param.label : undefined;
+        // Strip tag prefix from label for display (e.g. "Float:spawnX" -> "spawnX")
+        const displayLabel = label ? label.replace(/^[^:]*:/, "").replace(/\s*=.*$/, "").trim() : undefined;
+        const cleanDoc = stripInlineMarkdown(paramDoc);
+        return displayLabel ? `${displayLabel} — ${cleanDoc}` : cleanDoc;
+      }
+    }
+    return stripInlineMarkdown(fullSummary(snip));
+  };
+
+  // 1. Try Tree-sitter to find the call expression and active parameter
+  const treeCall = treeSitterParser.getCallExpressionAt(document, position);
+  if (treeCall) {
+      const funcNameNode = treeCall.node.childForFieldName("function");
+      if (funcNameNode) {
+          const funcName = funcNameNode.text;
+          const snip = pawnFuncCollection.get(funcName);
+          if (snip) {
+              return {
+                activeParameter: treeCall.argIndex,
+                activeSignature: 0,
+                signatures: [
+                  {
+                    label: snip.completion.label,
+                    parameters: snip.params,
+                    documentation: {
+                        kind: MarkupKind.Markdown,
+                        value: buildSignatureDoc(snip, treeCall.argIndex, treeCall.hasArgs)
+                    }
+                  },
+                ],
+              };
+          }
+      }
+  }
+
+  // 2. Fallback to global regex-based lookup
   const cursorIndex = positionToIndex(document.getText(), position);
   const result = findFunctionIdentifier(document.getText(), cursorIndex);
   if (result.identifier === "") return undefined;
   const snip = pawnFuncCollection.get(result.identifier);
   if (snip === undefined) return undefined;
   return {
-    activeParameter: 0,
+    activeParameter: result.parameterIndex,
     activeSignature: 0,
     signatures: [
       {
         label: snip.completion.label,
         parameters: snip.params,
-        documentation: snip.completion.documentation,
-        activeParameter: result.parameterIndex,
+        documentation: {
+            kind: MarkupKind.Markdown,
+            value: buildSignatureDoc(snip, result.parameterIndex, true)
+        }
       },
     ],
   };
