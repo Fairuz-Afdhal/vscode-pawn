@@ -57,7 +57,7 @@ export class TreeSitterParser {
             // Find explicit visibility keyword, or default to "function"
             const visibilityNode = node.children.find(c => ["new", "stock", "public", "static", "native", "forward", "hook"].includes(c.text) || c.type === "visibility");
             const visibility = visibilityNode ? visibilityNode.text : "function";
-            
+
             currentSymbol = {
               name: nameNode.text,
               kind: (visibility === "new" ? "function" : visibility) as PawnSymbol["kind"],
@@ -100,29 +100,29 @@ export class TreeSitterParser {
           const nameNode = node.childForFieldName("name");
           if (nameNode) {
             currentSymbol = {
-                name: nameNode.text,
-                kind: "enum", // Or another kind if preferred
-                node: node,
-                fullRange: this.getNodeRange(node),
-                selectionRange: this.getNodeRange(nameNode),
-                children: [],
+              name: nameNode.text,
+              kind: "enum", // Or another kind if preferred
+              node: node,
+              fullRange: this.getNodeRange(node),
+              selectionRange: this.getNodeRange(nameNode),
+              children: [],
             };
           }
           break;
         }
         case "variable_declaration": {
-            const nameNode = node.childForFieldName("name");
-            if (nameNode && (node.parent?.type === "variable_declaration_statement" || node.parent?.type === "enum_declaration")) {
-              currentSymbol = {
-                name: nameNode.text,
-                kind: "statement",
-                node: node,
-                fullRange: this.getNodeRange(node),
-                selectionRange: this.getNodeRange(nameNode),
-                children: [],
-              };
-            }
-            break;
+          const nameNode = node.childForFieldName("name");
+          if (nameNode && (node.parent?.type === "variable_declaration_statement" || node.parent?.type === "enum_declaration")) {
+            currentSymbol = {
+              name: nameNode.text,
+              kind: "statement",
+              node: node,
+              fullRange: this.getNodeRange(node),
+              selectionRange: this.getNodeRange(nameNode),
+              children: [],
+            };
+          }
+          break;
         }
         case "if_statement":
         case "for_statement":
