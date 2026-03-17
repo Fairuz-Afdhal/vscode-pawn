@@ -110,7 +110,7 @@ module.exports = grammar({
       optional(seq(":", $.identifier))
     ),
 
-    visibility: ($) => choice("stock", "public", "static", "native", "forward", "hook"),
+    visibility: ($) => choice("new", "stock", "public", "static", "native", "forward", "hook"),
 
     parameter_declarations: ($) => seq(
       "(",
@@ -129,7 +129,7 @@ module.exports = grammar({
 
     // Variables
     variable_declaration_statement: ($) => seq(
-      choice("new", "static", "const"),
+      choice("new", "static", "const", "stock"),
       commaSep1($.variable_declaration),
       optional(";"),
     ),
