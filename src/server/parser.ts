@@ -791,10 +791,10 @@ export const doDocumentSymbol = (textDocument: TextDocument): DocumentSymbol[] =
         kind = SymbolKind.Namespace;
         break;
       case "switch":
-        kind = SymbolKind.Module;
+        kind = SymbolKind.Class;
         break;
       case "case":
-        kind = SymbolKind.Struct;
+        kind = SymbolKind.Method;
         break;
       case "repetition":
         kind = SymbolKind.Interface;
