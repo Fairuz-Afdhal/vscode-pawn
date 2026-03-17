@@ -14,10 +14,10 @@ export class TreeSitterParser {
       } else {
         console.warn("Parser.init is not a function at runtime. Checking for alternatives...");
         if (typeof (Parser as any).default?.init === 'function') {
-           await (Parser as any).default.init();
+          await (Parser as any).default.init();
         }
       }
-      
+
       this.parser = new Parser();
       const wasmPath = path.join(__dirname, "..", "..", "dist", "tree-sitter-pawn.wasm");
       this.language = await Language.load(wasmPath);
@@ -30,7 +30,12 @@ export class TreeSitterParser {
 
   public parse(document: TextDocument): Tree | undefined {
     if (!this.parser) return undefined;
-    return this.parser.parse(document.getText()) ?? undefined;
+    try {
+      return this.parser.parse(document.getText()) ?? undefined;
+    } catch (e) {
+      console.error("TreeSitterParser: Parse failed with error:", e);
+      return undefined;
+    }
   }
 
   public getParser(): Parser | undefined {
@@ -139,6 +144,15 @@ export class TreeSitterParser {
           else if (node.type === "case_statement" || node.type === "default_statement") kind = "case";
           else if (node.type === "for_statement" || node.type === "foreach_statement" || node.type === "while_statement" || node.type === "do_while_statement") kind = "repetition";
 
+          // Precise selection range for case/default (up to the colon)
+          let selectionEnd = { line: node.startPosition.row, character: 1000 };
+          if (node.type === "case_statement" || node.type === "default_statement") {
+            const colonChild = node.children.find(c => c.type === ":");
+            if (colonChild) {
+              selectionEnd = { line: colonChild.endPosition.row, character: colonChild.endPosition.column };
+            }
+          }
+
           currentSymbol = {
             name: name,
             kind: kind,
@@ -146,7 +160,7 @@ export class TreeSitterParser {
             fullRange: this.getNodeRange(node),
             selectionRange: {
               start: this.getNodeRange(node).start,
-              end: { line: node.startPosition.row, character: 1000 },
+              end: selectionEnd,
             },
             children: [],
           };
