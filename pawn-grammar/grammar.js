@@ -16,6 +16,7 @@ const PREC = {
   POSTFIX: 15,
   CALL: 16,
   FIELD: 17,
+  COMMA: -2,
 };
 
 module.exports = grammar({
@@ -34,6 +35,8 @@ module.exports = grammar({
     [$._expression, $._switch_case],
     [$._statement, $.case_statement],
     [$._statement, $.default_statement],
+    [$._expression, $.comma_expression],
+    [$._expression, $.concatenated_string],
   ],
 
   word: ($) => $.identifier,
@@ -257,7 +260,20 @@ module.exports = grammar({
       $.sizeof_expression,
       $.tagof_expression,
       $.defined_expression,
+      $.comma_expression,
+      $.concatenated_string,
     ),
+
+    concatenated_string: ($) => prec.left(PREC.POSTFIX, seq(
+      $.string_literal,
+      repeat1(choice($.string_literal, $.identifier))
+    )),
+
+    comma_expression: ($) => prec.left(PREC.COMMA, seq(
+      field("left", $._expression),
+      ",",
+      field("right", $._expression),
+    )),
 
     subscript_expression: ($) => prec(PREC.POSTFIX, seq(
       $._expression,

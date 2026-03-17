@@ -13,7 +13,6 @@ export class TreeSitterParser {
         await (Parser as any).init();
       } else {
         console.warn("Parser.init is not a function at runtime. Checking for alternatives...");
-        // Fallback for some environments
         if (typeof (Parser as any).default?.init === 'function') {
            await (Parser as any).default.init();
         }
@@ -44,7 +43,6 @@ export class TreeSitterParser {
 
     const visit = (node: Node): PawnSymbol[] => {
       const symbols: PawnSymbol[] = [];
-
       let currentSymbol: PawnSymbol | undefined;
 
       switch (node.type) {
@@ -54,11 +52,7 @@ export class TreeSitterParser {
             const visibility = node.child(0)?.type === "visibility" ? node.child(0)?.text : "function";
             const firstLine = node.text.split("\n")[0].trim();
             let name = firstLine;
-
-            // Strip the trailing brace if it's there
-            if (name.endsWith("{")) {
-              name = name.slice(0, -1).trim();
-            }
+            if (name.endsWith("{")) name = name.slice(0, -1).trim();
 
             currentSymbol = {
               name: name,
@@ -93,14 +87,9 @@ export class TreeSitterParser {
           break;
         }
         case "enum_declaration": {
-          const nameNode = node.childForFieldName("name");
           const firstLine = node.text.split("\n")[0].trim();
           let name = firstLine;
-
-          // Strip the trailing brace if it's there
-          if (name.endsWith("{")) {
-            name = name.slice(0, -1).trim();
-          }
+          if (name.endsWith("{")) name = name.slice(0, -1).trim();
 
           currentSymbol = {
             name: name,
@@ -125,13 +114,9 @@ export class TreeSitterParser {
         case "default_statement": {
           const firstLine = node.text.split("\n")[0].trim();
           let name = firstLine;
+          if (name.endsWith("{")) name = name.slice(0, -1).trim();
 
-          // Strip the trailing brace if it's there (e.g. if (cond) { )
-          if (name.endsWith("{")) {
-            name = name.slice(0, -1).trim();
-          }
-
-          // Check if this is an 'else if'
+          // Handle 'else if'
           if (node.type === "if_statement" && node.parent?.type === "if_statement") {
             const siblings = node.parent.children;
             const index = siblings.indexOf(node);
@@ -140,7 +125,7 @@ export class TreeSitterParser {
             }
           }
 
-          // If the name is still just a brace or empty, fallback to node type
+          // Fallback name if header is empty or just a brace
           if (!name || name === "{" || name === "}") {
             name = node.type.replace("_statement", "");
           }
@@ -159,7 +144,6 @@ export class TreeSitterParser {
           break;
         }
         case "ERROR": {
-          // Skip ERROR nodes but continue visiting children
           break;
         }
       }
@@ -177,8 +161,6 @@ export class TreeSitterParser {
           for (let i = 0; i < children.length; i++) {
             if (children[i].type === "else" && i + 1 < children.length) {
               const next = children[i + 1];
-              // If the next node is NOT an if_statement (which is already handled by recursion), 
-              // but it's a block or statement, we want a symbol for it.
               if (next.type !== "if_statement") {
                 const elseSymbol: PawnSymbol = {
                   name: "else",
